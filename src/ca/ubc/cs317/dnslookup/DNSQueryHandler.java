@@ -3,6 +3,7 @@ package ca.ubc.cs317.dnslookup;
 import java.io.IOException;
 import java.net.*;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Random;
 import java.util.Set;
 
@@ -50,9 +51,67 @@ public class DNSQueryHandler {
      */
     public static DNSServerResponse buildAndSendQuery(byte[] message, InetAddress server,
                                                       DNSNode node) throws IOException {
-        // TODO (PART 1): Implement this
-        return null;
+        int pos = 0;
+
+        int transactionId = random.nextInt() % 0xFFFF;
+        message[pos++] = (byte)(transactionId >> 8);
+        message[pos++] = (byte)(transactionId);
+        message[pos++] = 0;
+        message[pos++] = 0;
+        message[pos++] = 0;
+        message[pos++] = 1;
+        System.out.println(message);
+
+        for (int i = 0; i < 6; i++) {
+            message[pos++] = 0;
+        }
+        String[] segs = node.getHostName().split("\\.");
+        for (int i = 0; i < segs.length; i++) {
+            String seg = segs[i];
+            message[pos++] = (byte)seg.length();
+
+
+            byte[] encoded = seg.getBytes();
+            for (int j = 0; j < encoded.length; j++) {
+                message[pos++] = encoded[j];
+            }
+        }
+
+        message[pos++] = 0;
+        message[pos++] = 0;
+        message[pos++] = (byte)node.getType().getCode();
+        message[pos++] = 0;
+        message[pos++] = 1;
+        System.out.println(message);
+
+        byte[] truncatedmessage = new byte[pos];
+        System.arraycopy(message,0, truncatedmessage, 0, pos);
+
+        DatagramPacket sendPacket = new DatagramPacket(truncatedmessage, truncatedmessage.length, server, DEFAULT_DNS_PORT);
+        try {
+            byte[] queryId = Arrays.copyOfRange(sendPacket.getData(),0,2);
+            int id = ((queryId[0] << 8) & 0xFFFF) 
+            | (queryId[1] & 0xFF);
+
+           
+            socket.send(sendPacket);
+
+            byte[] buffer = new byte[1024];
+            DatagramPacket res = new DatagramPacket(buffer, buffer.length);
+            socket.receive(res);
+            return new DNSServerResponse(ByteBuffer.wrap(res.getData()), id);
+
+        }catch(Exception e){
+            return null;
+        }
     }
+
+
+
+
+
+
+
 
     /**
      * Decodes the DNS server response and caches it.
