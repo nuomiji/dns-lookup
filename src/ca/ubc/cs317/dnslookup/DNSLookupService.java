@@ -31,7 +31,7 @@ public class DNSLookupService {
         }
 
         try {
-            rootServer = InetAddress.getByName(args[0]);
+            rootServer = InetAddress.getByName(args[0]);  // determines the IP address of a host, given the host's name
             System.out.println("Root DNS server is: " + rootServer.getHostAddress());
         } catch (UnknownHostException e) {
             System.err.println("Invalid root server (" + e.getMessage() + ").");
@@ -44,6 +44,8 @@ public class DNSLookupService {
             ex.printStackTrace();
             System.exit(1);
         }
+
+        // findAndPrintResults("www.cs.ubc.ca", RecordType.A); // !!! TODO: hardcoding. remove later
 
         Scanner in = new Scanner(System.in);
         Console console = System.console();
@@ -147,7 +149,7 @@ public class DNSLookupService {
      * @param type     Record type for search.
      */
     private static void findAndPrintResults(String hostName, RecordType type) {
-        DNSNode node = new DNSNode(hostName, type);
+        DNSNode node = new DNSNode(hostName, type);                                      // what is a DNSNode?
         printResults(node, getResults(node, 0));
     }
 

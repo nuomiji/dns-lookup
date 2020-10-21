@@ -1,7 +1,11 @@
 package ca.ubc.cs317.dnslookup;
 
 import java.io.IOException;
-import java.net.*;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Random;
@@ -59,7 +63,7 @@ public class DNSQueryHandler {
         message[pos++] = 0;
         message[pos++] = 0;
         message[pos++] = 0;
-        message[pos++] = 1;
+        message[pos++] = 1; // QDCOUNT
         System.out.println(message);
 
         for (int i = 0; i < 6; i++) {
@@ -107,12 +111,6 @@ public class DNSQueryHandler {
     }
 
 
-
-
-
-
-
-
     /**
      * Decodes the DNS server response and caches it.
      *
@@ -124,6 +122,154 @@ public class DNSQueryHandler {
     public static Set<ResourceRecord> decodeAndCacheResponse(int transactionID, ByteBuffer responseBuffer,
                                                              DNSCache cache) {
         // TODO (PART 1): Implement this
+        byte[] b = new byte[1024];
+        responseBuffer.get(b, 0, 1024);
+        int pos;
+        // get transactionID
+        int responseID = (0xff & b[0]) << 8 | (0xff & b[1]);
+        // (QR) check is response. 1st bit of the third byte
+       
+        // *(AA) check is authoritative, 2nd bit of the fourth byte
+        boolean isAuthoritative = (b[3] & 0x4) != 0;
+       
+        // (TC) check if truncated, if it is, fail gracefully
+        // (RD) looks like that's not needed?
+        // (RA) check if server is capable of recursive queries
+        // (RCODE) check if 0
+        boolean hasError = (0xf & b[3]) != 0;
+        if (hasError) return null;
+        // if (byteArray[3] != 0) // somehow throw error and exit gracefully
+
+        // *(ANCOUNT)
+        int answerCount = (0xff & b[6]) << 8 | (0xff & b[7]);
+        // *(NSCOUNT)
+        int nameServerCount = (0xff & b[8]) << 8 | (0xff & b[9]);
+        // *(ARCOUNT)
+        int additionalRecordCount = (0xff & b[10]) << 8 | (0xff & b[11]);
+
+        // go through query portion
+        pos = 12;
+        int curPos = pos;
+        int label = b[curPos];
+        String qName = "";
+        while(label != 0) {
+            if (label > 0) {
+                qName += new String(Arrays.copyOfRange(b, ++curPos, curPos + label));
+                curPos += label;
+                label = b[curPos];
+                if (label != 0) qName += ".";
+            } else {
+                curPos = ((label & 0x3F) << 8) | (b[++curPos] & 0xFF);
+                label = b[curPos];
+            }
+        }
+        pos = curPos;
+        System.out.println("QNAME " + qName);
+
+        // (QTYPE) pos +1 +2
+        // (QCLASS) pos +3 +4
+        
+        pos += 4;
+        pos++;
+
+        // answer section
+        // if (answerCount) {
+        //     // get answer
+        // }
+
+        // NS records
+        System.out.printf("Nameservers (%d)\n", nameServerCount);
+        for (int i = 0; i < nameServerCount; i++) {
+            String hostName = "";
+            curPos = pos;
+            int length = 0;
+            boolean isCompressed = false;
+            label = b[curPos++];
+            length++;
+            while(label != 0) {
+                if (label > 0) {
+                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                    curPos += label;
+                    label = b[curPos++];
+                    if (label != 0) hostName += ".";
+                    if (!isCompressed) length += label + 1;
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
+                    if (!isCompressed) length++;
+                    isCompressed = true;
+                }
+            }
+            pos += length;
+
+            RecordType type = RecordType.getByCode((0xff & b[pos++]) << 8 | (0xff & b[pos++]));
+            int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            String result = "";
+            curPos = pos;
+            label = b[curPos];
+            while(label != 0) {
+                if (label > 0) {
+                    result += new String(Arrays.copyOfRange(b, ++curPos, curPos + label));
+                    // System.out.println("Result: " + result);
+                    curPos += label;
+                    label = b[curPos];
+                    if (label != 0) result += ".";
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[++curPos] & 0xFF);
+                    label = b[curPos];
+                }
+            }
+            pos = pos + dataLength;
+            
+            ResourceRecord record = new ResourceRecord(hostName, type, ttl, result);
+            cache.addResult(record);
+            verbosePrintResourceRecord(record, type.getCode());
+        }
+
+        // Additional Records
+        System.out.printf("Additional Information (%d)\n", additionalRecordCount);
+        for (int i = 0; i < additionalRecordCount; i++) {
+            String hostName = "";
+            curPos = pos;
+            int length = 0;
+            boolean isCompressed = false;
+            label = b[curPos++];
+            length++;
+            while(label != 0) {
+                if (label > 0) {
+                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                    curPos += label;
+                    if (!isCompressed) length += label;
+                    label = b[curPos++];
+                    if (label != 0) hostName += ".";
+                    if (!isCompressed) length++;
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
+                    if (!isCompressed) length++;
+                    isCompressed = true;
+                }
+            }
+            pos += length;
+            
+            RecordType type = RecordType.getByCode((0xff & b[pos++]) << 8 | (0xff & b[pos++]));
+            int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
+            try {
+
+                String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                cache.addResult(record);
+                verbosePrintResourceRecord(record, type.getCode());
+            } catch (UnknownHostException E) {
+                // weird
+            }
+            pos = pos + dataLength;
+        }
         return null;
     }
 
@@ -135,7 +281,8 @@ public class DNSQueryHandler {
      */
     private static void verbosePrintResourceRecord(ResourceRecord record, int rtype) {
         if (verboseTracing)
-            System.out.format("       %-30s %-10d %-4s %s\n", record.getHostName(),
+            System.out.format("       %-30s %-10d %-4s %s\n",
+                    record.getHostName(),
                     record.getTTL(),
                     record.getType() == RecordType.OTHER ? rtype : record.getType(),
                     record.getTextResult());
