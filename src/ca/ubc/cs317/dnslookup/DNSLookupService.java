@@ -45,8 +45,6 @@ public class DNSLookupService {
             System.exit(1);
         }
 
-        // findAndPrintResults("www.cs.ubc.ca", RecordType.A); // !!! TODO: hardcoding. remove later
-
         Scanner in = new Scanner(System.in);
         Console console = System.console();
         do {
