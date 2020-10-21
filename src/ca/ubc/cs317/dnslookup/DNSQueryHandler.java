@@ -173,9 +173,48 @@ public class DNSQueryHandler {
         pos++;
 
         // answer section
-        // if (answerCount) {
-        //     // get answer
-        // }
+        System.out.printf("Answers (%d)\n", answerCount);
+        for (int i = 0; i < answerCount; i++) {
+            String hostName = "";
+            curPos = pos;
+            int length = 0;
+            boolean isCompressed = false;
+            label = b[curPos++];
+            length++;
+            while(label != 0) {
+                if (label > 0) {
+                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                    curPos += label;
+                    if (!isCompressed) length += label;
+                    label = b[curPos++];
+                    if (label != 0) hostName += ".";
+                    if (!isCompressed) length++;
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
+                    if (!isCompressed) length++;
+                    isCompressed = true;
+                }
+            }
+            pos += length;
+            
+            int typeCode = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            RecordType type = RecordType.getByCode(typeCode);
+            int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
+            try {
+
+                String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                cache.addResult(record);
+                verbosePrintResourceRecord(record, type.getCode());
+            } catch (UnknownHostException E) {
+                // weird
+            }
+            pos = pos + dataLength;
+        }
 
         // NS records
         System.out.printf("Nameservers (%d)\n", nameServerCount);
