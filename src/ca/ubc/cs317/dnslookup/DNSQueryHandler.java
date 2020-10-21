@@ -64,7 +64,6 @@ public class DNSQueryHandler {
         message[pos++] = 0;
         message[pos++] = 0;
         message[pos++] = 1; // QDCOUNT
-        System.out.println(message);
 
         for (int i = 0; i < 6; i++) {
             message[pos++] = 0;
@@ -86,7 +85,6 @@ public class DNSQueryHandler {
         message[pos++] = (byte)node.getType().getCode();
         message[pos++] = 0;
         message[pos++] = 1;
-        System.out.println(message);
 
         byte[] truncatedmessage = new byte[pos];
         System.arraycopy(message,0, truncatedmessage, 0, pos);
@@ -96,7 +94,10 @@ public class DNSQueryHandler {
             byte[] queryId = Arrays.copyOfRange(sendPacket.getData(),0,2);
             int id = ((queryId[0] << 8) & 0xFFFF) 
             | (queryId[1] & 0xFF);
-
+            
+            if (verboseTracing) {
+                System.out.printf("Query ID %9d %4s %2s --> %s\n", id, node.getHostName(), node.getType(), server.getHostAddress());
+            }
            
             socket.send(sendPacket);
 
@@ -131,6 +132,9 @@ public class DNSQueryHandler {
        
         // *(AA) check is authoritative, 2nd bit of the fourth byte
         boolean isAuthoritative = (b[3] & 0x4) != 0;
+        if (verboseTracing) {
+            System.out.printf("Response ID: %5d Authoritative = %s\n", responseID, isAuthoritative ? "true" : "false");
+        }
        
         // (TC) check if truncated, if it is, fail gracefully
         // (RD) looks like that's not needed?
@@ -164,7 +168,6 @@ public class DNSQueryHandler {
             }
         }
         pos = curPos;
-        System.out.println("QNAME " + qName);
 
         // (QTYPE) pos +1 +2
         // (QCLASS) pos +3 +4
@@ -173,7 +176,7 @@ public class DNSQueryHandler {
         pos++;
 
         // answer section
-        System.out.printf("Answers (%d)\n", answerCount);
+        if (verboseTracing) System.out.printf("%9s (%d)\n", "Answers", answerCount);
         for (int i = 0; i < answerCount; i++) {
             String hostName = "";
             curPos = pos;
@@ -217,7 +220,7 @@ public class DNSQueryHandler {
         }
 
         // NS records
-        System.out.printf("Nameservers (%d)\n", nameServerCount);
+        if (verboseTracing) System.out.printf("%13s (%d)\n", "Nameservers", nameServerCount);
         for (int i = 0; i < nameServerCount; i++) {
             String hostName = "";
             curPos = pos;
@@ -268,7 +271,7 @@ public class DNSQueryHandler {
         }
 
         // Additional Records
-        System.out.printf("Additional Information (%d)\n", additionalRecordCount);
+        if (verboseTracing) System.out.printf("%24s (%d)\n", "Additional Information", additionalRecordCount);
         for (int i = 0; i < additionalRecordCount; i++) {
             String hostName = "";
             curPos = pos;

@@ -31,7 +31,7 @@ public class DNSLookupService {
         }
 
         try {
-            rootServer = InetAddress.getByName(args[0]);  // determines the IP address of a host, given the host's name
+            rootServer = InetAddress.getByName(args[0]);
             System.out.println("Root DNS server is: " + rootServer.getHostAddress());
         } catch (UnknownHostException e) {
             System.err.println("Invalid root server (" + e.getMessage() + ").");
@@ -149,7 +149,7 @@ public class DNSLookupService {
      * @param type     Record type for search.
      */
     private static void findAndPrintResults(String hostName, RecordType type) {
-        DNSNode node = new DNSNode(hostName, type);                                      // what is a DNSNode?
+        DNSNode node = new DNSNode(hostName, type);
         printResults(node, getResults(node, 0));
     }
 
