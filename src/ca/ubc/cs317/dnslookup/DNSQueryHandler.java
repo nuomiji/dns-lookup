@@ -118,9 +118,9 @@ public class DNSQueryHandler {
      */
     public static Set<ResourceRecord> decodeAndCacheResponse(int transactionID, ByteBuffer responseBuffer,
                                                              DNSCache cache) {
-        // TODO (PART 1): Implement this
-        byte[] b = new byte[1024];
-        responseBuffer.get(b, 0, 1024);
+        // (PART 1)
+        byte[] b = new byte[responseBuffer.remaining()];
+        responseBuffer.get(b, 0, responseBuffer.remaining());
         int pos;
         // get transactionID
         int responseID = (0xff & b[0]) << 8 | (0xff & b[1]);
@@ -138,7 +138,7 @@ public class DNSQueryHandler {
         // (RCODE) check if 0
         boolean hasError = (0xf & b[3]) != 0;
         if (hasError) return null;
-        // if (byteArray[3] != 0) // somehow throw error and exit gracefully
+        // TODO: if NOT FOUND, use a TTL of -1 and the IP 0.0.0.0
 
         // *(ANCOUNT)
         int answerCount = (0xff & b[6]) << 8 | (0xff & b[7]);
@@ -202,16 +202,48 @@ public class DNSQueryHandler {
             int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
-            byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
-            try {
+            
+            switch (type) {
+                case A:
+                case AAAA:
+                    try {
+                        byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
+                    
+                        String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                        ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
+                    } catch (UnknownHostException E) {
+                        // weird
+                    }
+                break;
 
-                String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
-                ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
-                cache.addResult(record);
-                verbosePrintResourceRecord(record, type.getCode());
-            } catch (UnknownHostException E) {
-                // weird
+                case CNAME:
+                    String alias = "";
+                    curPos = pos;
+                    label = b[curPos++];
+                    while(label != 0) {
+                        if (label > 0) {
+                            alias += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                            curPos += label;
+                            label = b[curPos++];
+                            if (label != 0) alias += ".";
+                        } else {
+                            curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                            label = b[curPos++];
+                            isCompressed = true;
+                        }
+                    }
+
+                    ResourceRecord record = new ResourceRecord(hostName, type, ttl, alias);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
+                break;
+
+                default:
+                break;
             }
+            
             pos = pos + dataLength;
         }
 
