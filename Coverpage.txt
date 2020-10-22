@@ -28,10 +28,10 @@ information to this file and then commit and push this file.
 
 
 STUDENT  1
-Name :
-St. No:
-Unix Id :
-Email:
+Name : YANG LIU
+St. No: 26631960
+Unix Id : v4f2b
+Email: v4f2b@ugrad.cs.ubc.ca
 
 STUDENT  2
 Name : XiaoHan Dang
