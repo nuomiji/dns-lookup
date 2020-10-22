@@ -92,7 +92,7 @@ public class DNSQueryHandler {
             | (queryId[1] & 0xFF);
             
             if (verboseTracing) {
-                System.out.printf("Query ID %9d %4s %2s --> %s\n", id, node.getHostName(), node.getType(), server.getHostAddress());
+                System.out.printf("\n\nQuery ID %9d %4s %2s --> %s\n", id, node.getHostName(), node.getType(), server.getHostAddress());
             }
            
             socket.send(sendPacket);
