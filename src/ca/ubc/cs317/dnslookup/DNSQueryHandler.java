@@ -59,8 +59,7 @@ public class DNSQueryHandler {
         message[pos++] = 0;
         message[pos++] = 0;
         message[pos++] = 0;
-        message[pos++] = 1;
-        System.out.println(message);
+        message[pos++] = 1; // QDCOUNT
 
         for (int i = 0; i < 6; i++) {
             message[pos++] = 0;
@@ -82,7 +81,6 @@ public class DNSQueryHandler {
         message[pos++] = (byte)node.getType().getCode();
         message[pos++] = 0;
         message[pos++] = 1;
-        System.out.println(message);
 
         byte[] truncatedmessage = new byte[pos];
         System.arraycopy(message,0, truncatedmessage, 0, pos);
@@ -92,7 +90,10 @@ public class DNSQueryHandler {
             byte[] queryId = Arrays.copyOfRange(sendPacket.getData(),0,2);
             int id = ((queryId[0] << 8) & 0xFFFF) 
             | (queryId[1] & 0xFF);
-
+            
+            if (verboseTracing) {
+                System.out.printf("Query ID %9d %4s %2s --> %s\n", id, node.getHostName(), node.getType(), server.getHostAddress());
+            }
            
             socket.send(sendPacket);
 
@@ -107,12 +108,6 @@ public class DNSQueryHandler {
     }
 
 
-
-
-
-
-
-
     /**
      * Decodes the DNS server response and caches it.
      *
@@ -123,7 +118,228 @@ public class DNSQueryHandler {
      */
     public static Set<ResourceRecord> decodeAndCacheResponse(int transactionID, ByteBuffer responseBuffer,
                                                              DNSCache cache) {
-        // TODO (PART 1): Implement this
+        // (PART 1)
+        byte[] b = new byte[responseBuffer.remaining()];
+        responseBuffer.get(b, 0, responseBuffer.remaining());
+        int pos;
+        // get transactionID
+        int responseID = (0xff & b[0]) << 8 | (0xff & b[1]);
+        // (QR) check is response. 1st bit of the third byte
+       
+        // *(AA) check is authoritative, 2nd bit of the fourth byte
+        boolean isAuthoritative = (b[3] & 0x4) != 0;
+        if (verboseTracing) {
+            System.out.printf("Response ID: %5d Authoritative = %s\n", responseID, isAuthoritative ? "true" : "false");
+        }
+       
+        // (TC) check if truncated, if it is, fail gracefully
+        // (RD) looks like that's not needed?
+        // (RA) check if server is capable of recursive queries
+        // (RCODE) check if 0
+        boolean hasError = (0xf & b[3]) != 0;
+        if (hasError) return null;
+        // TODO: if NOT FOUND, use a TTL of -1 and the IP 0.0.0.0
+
+        // *(ANCOUNT)
+        int answerCount = (0xff & b[6]) << 8 | (0xff & b[7]);
+        // *(NSCOUNT)
+        int nameServerCount = (0xff & b[8]) << 8 | (0xff & b[9]);
+        // *(ARCOUNT)
+        int additionalRecordCount = (0xff & b[10]) << 8 | (0xff & b[11]);
+
+        // go through query portion
+        pos = 12;
+        int curPos = pos;
+        int label = b[curPos];
+        String qName = "";
+        while(label != 0) {
+            if (label > 0) {
+                qName += new String(Arrays.copyOfRange(b, ++curPos, curPos + label));
+                curPos += label;
+                label = b[curPos];
+                if (label != 0) qName += ".";
+            } else {
+                curPos = ((label & 0x3F) << 8) | (b[++curPos] & 0xFF);
+                label = b[curPos];
+            }
+        }
+        pos = curPos;
+
+        // (QTYPE) pos +1 +2
+        // (QCLASS) pos +3 +4
+        
+        pos += 4;
+        pos++;
+
+        // answer section
+        if (verboseTracing) System.out.printf("%9s (%d)\n", "Answers", answerCount);
+        for (int i = 0; i < answerCount; i++) {
+            String hostName = "";
+            curPos = pos;
+            int length = 0;
+            boolean isCompressed = false;
+            label = b[curPos++];
+            length++;
+            while(label != 0) {
+                if (label > 0) {
+                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                    curPos += label;
+                    if (!isCompressed) length += label;
+                    label = b[curPos++];
+                    if (label != 0) hostName += ".";
+                    if (!isCompressed) length++;
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
+                    if (!isCompressed) length++;
+                    isCompressed = true;
+                }
+            }
+            pos += length;
+            
+            int typeCode = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            RecordType type = RecordType.getByCode(typeCode);
+            int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            
+            switch (type) {
+                case A:
+                case AAAA:
+                    try {
+                        byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
+                    
+                        String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                        ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
+                    } catch (UnknownHostException E) {
+                        // weird
+                    }
+                break;
+
+                case CNAME:
+                    String alias = "";
+                    curPos = pos;
+                    label = b[curPos++];
+                    while(label != 0) {
+                        if (label > 0) {
+                            alias += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                            curPos += label;
+                            label = b[curPos++];
+                            if (label != 0) alias += ".";
+                        } else {
+                            curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                            label = b[curPos++];
+                            isCompressed = true;
+                        }
+                    }
+
+                    ResourceRecord record = new ResourceRecord(hostName, type, ttl, alias);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
+                break;
+
+                default:
+                break;
+            }
+            
+            pos = pos + dataLength;
+        }
+
+        // NS records
+        if (verboseTracing) System.out.printf("%13s (%d)\n", "Nameservers", nameServerCount);
+        for (int i = 0; i < nameServerCount; i++) {
+            String hostName = "";
+            curPos = pos;
+            int length = 0;
+            boolean isCompressed = false;
+            label = b[curPos++];
+            length++;
+            while(label != 0) {
+                if (label > 0) {
+                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                    curPos += label;
+                    label = b[curPos++];
+                    if (label != 0) hostName += ".";
+                    if (!isCompressed) length += label + 1;
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
+                    if (!isCompressed) length++;
+                    isCompressed = true;
+                }
+            }
+            pos += length;
+
+            RecordType type = RecordType.getByCode((0xff & b[pos++]) << 8 | (0xff & b[pos++]));
+            int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            String result = "";
+            curPos = pos;
+            label = b[curPos];
+            while(label != 0) {
+                if (label > 0) {
+                    result += new String(Arrays.copyOfRange(b, ++curPos, curPos + label));
+                    // System.out.println("Result: " + result);
+                    curPos += label;
+                    label = b[curPos];
+                    if (label != 0) result += ".";
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[++curPos] & 0xFF);
+                    label = b[curPos];
+                }
+            }
+            pos = pos + dataLength;
+            
+            ResourceRecord record = new ResourceRecord(hostName, type, ttl, result);
+            cache.addResult(record);
+            verbosePrintResourceRecord(record, type.getCode());
+        }
+
+        // Additional Records
+        if (verboseTracing) System.out.printf("%24s (%d)\n", "Additional Information", additionalRecordCount);
+        for (int i = 0; i < additionalRecordCount; i++) {
+            String hostName = "";
+            curPos = pos;
+            int length = 0;
+            boolean isCompressed = false;
+            label = b[curPos++];
+            length++;
+            while(label != 0) {
+                if (label > 0) {
+                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                    curPos += label;
+                    if (!isCompressed) length += label;
+                    label = b[curPos++];
+                    if (label != 0) hostName += ".";
+                    if (!isCompressed) length++;
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
+                    if (!isCompressed) length++;
+                    isCompressed = true;
+                }
+            }
+            pos += length;
+            
+            RecordType type = RecordType.getByCode((0xff & b[pos++]) << 8 | (0xff & b[pos++]));
+            int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
+            byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
+            try {
+
+                String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                cache.addResult(record);
+                verbosePrintResourceRecord(record, type.getCode());
+            } catch (UnknownHostException E) {
+                // weird
+            }
+            pos = pos + dataLength;
+        }
         return null;
     }
 
@@ -135,7 +351,8 @@ public class DNSQueryHandler {
      */
     private static void verbosePrintResourceRecord(ResourceRecord record, int rtype) {
         if (verboseTracing)
-            System.out.format("       %-30s %-10d %-4s %s\n", record.getHostName(),
+            System.out.format("       %-30s %-10d %-4s %s\n",
+                    record.getHostName(),
                     record.getTTL(),
                     record.getType() == RecordType.OTHER ? rtype : record.getType(),
                     record.getTextResult());
