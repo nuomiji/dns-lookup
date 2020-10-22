@@ -140,6 +140,8 @@ public class DNSQueryHandler {
         if (hasError) return null;
         // TODO: if NOT FOUND, use a TTL of -1 and the IP 0.0.0.0
 
+        // *(QCOUNT)
+        int queryCount = (0xff & b[4]) << 8 | (0xff & b[5]);
         // *(ANCOUNT)
         int answerCount = (0xff & b[6]) << 8 | (0xff & b[7]);
         // *(NSCOUNT)
@@ -149,53 +151,59 @@ public class DNSQueryHandler {
 
         // go through query portion
         pos = 12;
-        int curPos = pos;
-        int label = b[curPos];
-        String qName = "";
-        while(label != 0) {
-            if (label > 0) {
-                qName += new String(Arrays.copyOfRange(b, ++curPos, curPos + label));
-                curPos += label;
-                label = b[curPos];
-                if (label != 0) qName += ".";
-            } else {
-                curPos = ((label & 0x3F) << 8) | (b[++curPos] & 0xFF);
-                label = b[curPos];
+        for (int i = 0; i < queryCount; i++) {
+            String qName = "";
+            boolean isCompressed = false;
+            int curPos = pos;
+            int label = b[curPos++];
+            pos++;
+            
+            while(label != 0) {
+                if (label > 0) {
+                    qName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
+                    curPos += label;
+                    if (!isCompressed) pos += label;
+                    label = b[curPos++];
+                    if (!isCompressed) pos++;
+                    if (label != 0) qName += ".";
+                } else {
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
+                    if (!isCompressed) pos++;
+                    isCompressed = true;
+                }
             }
+            pos = curPos;
         }
-        pos = curPos;
 
         // (QTYPE) pos +1 +2
         // (QCLASS) pos +3 +4
         
         pos += 4;
-        pos++;
 
         // answer section
         if (verboseTracing) System.out.printf("%9s (%d)\n", "Answers", answerCount);
         for (int i = 0; i < answerCount; i++) {
             String hostName = "";
-            curPos = pos;
-            int length = 0;
             boolean isCompressed = false;
-            label = b[curPos++];
-            length++;
+            int curPos = pos;
+            int label = b[curPos++];
+            pos++;
             while(label != 0) {
                 if (label > 0) {
                     hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
                     curPos += label;
-                    if (!isCompressed) length += label;
+                    if (!isCompressed) pos += label;
                     label = b[curPos++];
                     if (label != 0) hostName += ".";
-                    if (!isCompressed) length++;
+                    if (!isCompressed) pos++;
                 } else {
                     curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
                     label = b[curPos++];
-                    if (!isCompressed) length++;
+                    if (!isCompressed) pos++;
                     isCompressed = true;
                 }
             }
-            pos += length;
             
             int typeCode = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             RecordType type = RecordType.getByCode(typeCode);
@@ -251,26 +259,24 @@ public class DNSQueryHandler {
         if (verboseTracing) System.out.printf("%13s (%d)\n", "Nameservers", nameServerCount);
         for (int i = 0; i < nameServerCount; i++) {
             String hostName = "";
-            curPos = pos;
-            int length = 0;
             boolean isCompressed = false;
-            label = b[curPos++];
-            length++;
+            int curPos = pos;
+            int label = b[curPos++];
+            pos++;
             while(label != 0) {
                 if (label > 0) {
                     hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
                     curPos += label;
                     label = b[curPos++];
                     if (label != 0) hostName += ".";
-                    if (!isCompressed) length += label + 1;
+                    if (!isCompressed) pos += label + 1;
                 } else {
                     curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
                     label = b[curPos++];
-                    if (!isCompressed) length++;
+                    if (!isCompressed) pos++;
                     isCompressed = true;
                 }
             }
-            pos += length;
 
             RecordType type = RecordType.getByCode((0xff & b[pos++]) << 8 | (0xff & b[pos++]));
             int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
@@ -278,17 +284,16 @@ public class DNSQueryHandler {
             int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             String result = "";
             curPos = pos;
-            label = b[curPos];
+            label = b[curPos++];
             while(label != 0) {
                 if (label > 0) {
-                    result += new String(Arrays.copyOfRange(b, ++curPos, curPos + label));
-                    // System.out.println("Result: " + result);
+                    result += new String(Arrays.copyOfRange(b, curPos, curPos + label));
                     curPos += label;
-                    label = b[curPos];
+                    label = b[curPos++];
                     if (label != 0) result += ".";
                 } else {
-                    curPos = ((label & 0x3F) << 8) | (b[++curPos] & 0xFF);
-                    label = b[curPos];
+                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
+                    label = b[curPos++];
                 }
             }
             pos = pos + dataLength;
@@ -302,27 +307,25 @@ public class DNSQueryHandler {
         if (verboseTracing) System.out.printf("%24s (%d)\n", "Additional Information", additionalRecordCount);
         for (int i = 0; i < additionalRecordCount; i++) {
             String hostName = "";
-            curPos = pos;
-            int length = 0;
             boolean isCompressed = false;
-            label = b[curPos++];
-            length++;
+            int curPos = pos;
+            int label = b[curPos++];
+            pos++;
             while(label != 0) {
                 if (label > 0) {
                     hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
                     curPos += label;
-                    if (!isCompressed) length += label;
+                    if (!isCompressed) pos += label;
                     label = b[curPos++];
                     if (label != 0) hostName += ".";
-                    if (!isCompressed) length++;
+                    if (!isCompressed) pos++;
                 } else {
                     curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
                     label = b[curPos++];
-                    if (!isCompressed) length++;
+                    if (!isCompressed) pos++;
                     isCompressed = true;
                 }
             }
-            pos += length;
             
             RecordType type = RecordType.getByCode((0xff & b[pos++]) << 8 | (0xff & b[pos++]));
             int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
