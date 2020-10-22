@@ -34,7 +34,7 @@ Unix Id :
 Email:
 
 STUDENT  2
-Name :
-St. No:
-Unix Id :
-Email:
+Name : XiaoHan Dang
+St. No: 36524122
+Unix Id : p4o1b
+Email: p4o1b@ugrad.cs.ubc.ca
