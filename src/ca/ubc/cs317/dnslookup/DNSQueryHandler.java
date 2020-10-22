@@ -165,28 +165,9 @@ public class DNSQueryHandler {
         // answer section
         if (verboseTracing) System.out.printf("%9s (%d)\n", "Answers", answerCount);
         for (int i = 0; i < answerCount; i++) {
-            String hostName = "";
-            int curPos = pos;
-            int length = 0;
-            boolean isCompressed = false;
-            int label = b[curPos++];
-            length++;
-            while(label != 0) {
-                if (label > 0) {
-                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
-                    curPos += label;
-                    if (!isCompressed) length += label;
-                    label = b[curPos++];
-                    if (label != 0) hostName += ".";
-                    if (!isCompressed) length++;
-                } else {
-                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
-                    label = b[curPos++];
-                    if (!isCompressed) length++;
-                    isCompressed = true;
-                }
-            }
-            pos += length;
+            DomainNameParser.parse(b, pos);
+            String hostName = DomainNameParser.getDomainName();
+            pos += DomainNameParser.getDataLength();
             
             int typeCode = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             RecordType type = RecordType.getByCode(typeCode);
@@ -210,21 +191,8 @@ public class DNSQueryHandler {
                 break;
 
                 case CNAME:
-                    String alias = "";
-                    curPos = pos;
-                    label = b[curPos++];
-                    while(label != 0) {
-                        if (label > 0) {
-                            alias += new String(Arrays.copyOfRange(b, curPos, curPos + label));
-                            curPos += label;
-                            label = b[curPos++];
-                            if (label != 0) alias += ".";
-                        } else {
-                            curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
-                            label = b[curPos++];
-                            isCompressed = true;
-                        }
-                    }
+                    DomainNameParser.parse(b, pos);
+                    String alias = DomainNameParser.getDomainName();
 
                     ResourceRecord record = new ResourceRecord(hostName, type, ttl, alias);
                         cache.addResult(record);
@@ -249,21 +217,8 @@ public class DNSQueryHandler {
             int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
-            String result = "";
-            int curPos = pos;
-            int label = b[curPos];
-            while(label != 0) {
-                if (label > 0) {
-                    result += new String(Arrays.copyOfRange(b, ++curPos, curPos + label));
-                    // System.out.println("Result: " + result);
-                    curPos += label;
-                    label = b[curPos];
-                    if (label != 0) result += ".";
-                } else {
-                    curPos = ((label & 0x3F) << 8) | (b[++curPos] & 0xFF);
-                    label = b[curPos];
-                }
-            }
+            DomainNameParser.parse(b, pos);
+            String result = DomainNameParser.getDomainName();
             pos = pos + dataLength;
             
             ResourceRecord record = new ResourceRecord(hostName, type, ttl, result);
@@ -274,28 +229,9 @@ public class DNSQueryHandler {
         // Additional Records
         if (verboseTracing) System.out.printf("%24s (%d)\n", "Additional Information", additionalRecordCount);
         for (int i = 0; i < additionalRecordCount; i++) {
-            String hostName = "";
-            int curPos = pos;
-            int length = 0;
-            boolean isCompressed = false;
-            int label = b[curPos++];
-            length++;
-            while(label != 0) {
-                if (label > 0) {
-                    hostName += new String(Arrays.copyOfRange(b, curPos, curPos + label));
-                    curPos += label;
-                    if (!isCompressed) length += label;
-                    label = b[curPos++];
-                    if (label != 0) hostName += ".";
-                    if (!isCompressed) length++;
-                } else {
-                    curPos = ((label & 0x3F) << 8) | (b[curPos] & 0xFF);
-                    label = b[curPos++];
-                    if (!isCompressed) length++;
-                    isCompressed = true;
-                }
-            }
-            pos += length;
+            DomainNameParser.parse(b, pos);
+            String hostName = DomainNameParser.getDomainName();
+            pos += DomainNameParser.getDataLength();
             
             RecordType type = RecordType.getByCode((0xff & b[pos++]) << 8 | (0xff & b[pos++]));
             int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
