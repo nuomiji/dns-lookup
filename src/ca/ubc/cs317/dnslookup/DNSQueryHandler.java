@@ -237,16 +237,40 @@ public class DNSQueryHandler {
             int nsClass = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             int ttl = (0xff & b[pos++] << 24 | 0xff & b[pos++] << 16 | 0xff & b[pos++]) << 8 | (0xff & b[pos++]);
             int dataLength = (0xff & b[pos++]) << 8 | (0xff & b[pos++]);
-            byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
-            try {
+            
+            switch (type) {
+                case A:
+                case AAAA:
+                    byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
+                    try {
+                        
+                        String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
+                        ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
+                    } catch (UnknownHostException E) {
+                        // weird
+                    }
+                    break;
+                    
+                case CNAME:
+                case NS:
+                case SOA:
+                case MX:
+                    DomainNameParser.parse(b, pos);    
+                    String domainName = DomainNameParser.getDomainName();
+                    ResourceRecord record = new ResourceRecord(hostName, type, ttl, domainName);
+                    cache.addResult(record);
+                    verbosePrintResourceRecord(record, type.getCode());
+                    break;
 
-                String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
-                ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
-                cache.addResult(record);
-                verbosePrintResourceRecord(record, type.getCode());
-            } catch (UnknownHostException E) {
-                // weird
-            }
+                default:
+                    record = new ResourceRecord(hostName, type, ttl, "");
+                    cache.addResult(record);
+                    verbosePrintResourceRecord(record, type.getCode());
+                    break;
+                }
+                
             pos = pos + dataLength;
         }
         return null;
