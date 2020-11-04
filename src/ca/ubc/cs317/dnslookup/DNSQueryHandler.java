@@ -126,8 +126,8 @@ public class DNSQueryHandler {
         int responseID = (0xff & b[0]) << 8 | (0xff & b[1]);
         // (QR) check is response. 1st bit of the third byte
        
-        // *(AA) check is authoritative, 2nd bit of the fourth byte
-        boolean isAuthoritative = (b[3] & 0x4) != 0;
+        // *(AA) check is authoritative, 2nd bit of the third byte
+        boolean isAuthoritative = (b[2] & 0x4) != 0;
         if (verboseTracing) {
             System.out.printf("Response ID: %5d Authoritative = %s\n", responseID, isAuthoritative ? "true" : "false");
         }
