@@ -180,6 +180,7 @@ public class DNSLookupService {
         DNSNode cnameNode = new DNSNode(node.getHostName(), RecordType.CNAME);
         Set<ResourceRecord> cnameCachedResults = cache.getCachedResults(cnameNode);
 
+        // If no records in cache, try retrieveResultsFromServer once and load from cache again
         if (cachedResults.isEmpty() && cnameCachedResults.isEmpty()) {
             retrieveResultsFromServer(node, rootServer);
             cachedResults = cache.getCachedResults(node);
@@ -238,28 +239,37 @@ public class DNSLookupService {
      */
     private static void queryNextLevel(DNSNode node, Set<ResourceRecord> nameservers) {
         // TODO (PART 2): Implement this
+
+        // if we've collected A, AAAA, or CNAME records for node, return
+        DNSNode cnameNode = new DNSNode(node.getHostName(), RecordType.CNAME);
+        if (!(cache.getCachedResults(node).isEmpty() && cache.getCachedResults(cnameNode).isEmpty())) return;
        
         // ns is a record with only host names and no ip, need to find 
         // the IP address of it either from the cache or by doing another query
+        ResourceRecord selectedNS = null;
+
+        // get from cache or from query
         for (ResourceRecord hostnameNS: nameservers) {
-            // if we've collected A, AAAA, or CNAME records for node, return
-            DNSNode cnameNode = new DNSNode(node.getHostName(), RecordType.CNAME);
-            if (!(cache.getCachedResults(node).isEmpty() && cache.getCachedResults(cnameNode).isEmpty())) return;
-            // probably need to loop through them all but taking the first one for now
             // this record should have an IPv4 address
             DNSNode nsNode = new DNSNode (hostnameNS.getTextResult(), RecordType.A);
-            // TODO: only getting the first one, hope this is ok
             Set<ResourceRecord> cachedNS = cache.getCachedResults(nsNode);
 
-            if (cachedNS.isEmpty()) {
-                cachedNS = getResults(nsNode, 0);
+            if (!cachedNS.isEmpty()) {
+                // just need to pick one ns
+                selectedNS = cachedNS.iterator().next();
+                break;
+            } else if (selectedNS == null) {
+                Set<ResourceRecord> nsResults = getResults(nsNode, 0);
+                if (!nsResults.isEmpty()) {
+                    // just need to pick one ns
+                    selectedNS = nsResults.iterator().next();
+                }
             }
-            
-            for (ResourceRecord ns: cachedNS) {
-                if (!cache.getCachedResults(node).isEmpty()) return;
-                
-                retrieveResultsFromServer(node, ns.getInetResult());
-            }
+        }
+
+        // if any of the nameservers can be resolved, query next level
+        if (selectedNS != null) {
+            retrieveResultsFromServer(node, selectedNS.getInetResult());
         }
     }
 
