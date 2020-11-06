@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.*;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 
@@ -118,6 +119,7 @@ public class DNSQueryHandler {
      */
     public static Set<ResourceRecord> decodeAndCacheResponse(int transactionID, ByteBuffer responseBuffer,
                                                              DNSCache cache) {
+        Set<ResourceRecord> nameServers = new HashSet<ResourceRecord>();
         // (PART 1)
         byte[] b = new byte[responseBuffer.remaining()];
         responseBuffer.get(b, 0, responseBuffer.remaining());
@@ -181,8 +183,8 @@ public class DNSQueryHandler {
                     try {
                         byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
                     
-                        String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
-                        ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                        InetAddress addr = InetAddress.getByAddress(ipBytes);
+                        ResourceRecord record = new ResourceRecord(hostName, type, ttl, addr);
                         cache.addResult(record);
                         verbosePrintResourceRecord(record, type.getCode());
                     } catch (UnknownHostException E) {
@@ -223,6 +225,7 @@ public class DNSQueryHandler {
             
             ResourceRecord record = new ResourceRecord(hostName, type, ttl, result);
             cache.addResult(record);
+            nameServers.add(record);
             verbosePrintResourceRecord(record, type.getCode());
         }
 
@@ -244,8 +247,8 @@ public class DNSQueryHandler {
                     byte[] ipBytes = Arrays.copyOfRange(b, pos, pos + dataLength);
                     try {
                         
-                        String ip = InetAddress.getByAddress(ipBytes).getHostAddress();
-                        ResourceRecord record = new ResourceRecord(hostName, type, ttl, ip);
+                        InetAddress addr = InetAddress.getByAddress(ipBytes);
+                        ResourceRecord record = new ResourceRecord(hostName, type, ttl, addr);
                         cache.addResult(record);
                         verbosePrintResourceRecord(record, type.getCode());
                     } catch (UnknownHostException E) {
@@ -273,7 +276,7 @@ public class DNSQueryHandler {
                 
             pos = pos + dataLength;
         }
-        return null;
+        return nameServers;
     }
 
     /**
