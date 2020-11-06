@@ -174,6 +174,32 @@ public class DNSLookupService {
 
         // TODO (PART 1/2): Implement this
 
+        // get records in cache if any
+        // TODO: test other RecordTypes
+        Set<ResourceRecord> cachedResults = cache.getCachedResults(node);
+        DNSNode cnameNode = new DNSNode(node.getHostName(), RecordType.CNAME);
+        Set<ResourceRecord> cnameCachedResults = cache.getCachedResults(cnameNode);
+
+        if (cachedResults.isEmpty() && cnameCachedResults.isEmpty()) {
+            retrieveResultsFromServer(node, rootServer);
+            cachedResults = cache.getCachedResults(node);
+            cnameCachedResults = cache.getCachedResults(cnameNode);
+        }
+
+        // check for record type specified by the user
+        if (!cachedResults.isEmpty()) return cachedResults;
+
+        // check any CNAME records, which might indirectly contain results
+        if (!cnameCachedResults.isEmpty()) {
+            Set<ResourceRecord> returnedResults = new HashSet<ResourceRecord> ();
+            for (ResourceRecord record: cnameCachedResults) {
+                DNSNode aliasNode = new DNSNode(record.getTextResult(), node.getType());
+                returnedResults.addAll(getResults(aliasNode, indirectionLevel + 1));
+            }
+            return returnedResults;
+        }
+
+        // probably no results, but leaving it as cache.getCachedResults for now
         return cache.getCachedResults(node);
     }
 
@@ -198,6 +224,7 @@ public class DNSLookupService {
 
             if (p1Flag) return; // For testing part 1 only
 
+            // we might not need to query the next level, queryNextLevel be responsible for checking
             queryNextLevel(node, nameservers);
 
         } catch (IOException | NullPointerException ignored){}
@@ -211,7 +238,29 @@ public class DNSLookupService {
      */
     private static void queryNextLevel(DNSNode node, Set<ResourceRecord> nameservers) {
         // TODO (PART 2): Implement this
+       
+        // ns is a record with only host names and no ip, need to find 
+        // the IP address of it either from the cache or by doing another query
+        for (ResourceRecord hostnameNS: nameservers) {
+            // if we've collected A, AAAA, or CNAME records for node, return
+            DNSNode cnameNode = new DNSNode(node.getHostName(), RecordType.CNAME);
+            if (!(cache.getCachedResults(node).isEmpty() && cache.getCachedResults(cnameNode).isEmpty())) return;
+            // probably need to loop through them all but taking the first one for now
+            // this record should have an IPv4 address
+            DNSNode nsNode = new DNSNode (hostnameNS.getTextResult(), RecordType.A);
+            // TODO: only getting the first one, hope this is ok
+            Set<ResourceRecord> cachedNS = cache.getCachedResults(nsNode);
 
+            if (cachedNS.isEmpty()) {
+                cachedNS = getResults(nsNode, 0);
+            }
+            
+            for (ResourceRecord ns: cachedNS) {
+                if (!cache.getCachedResults(node).isEmpty()) return;
+                
+                retrieveResultsFromServer(node, ns.getInetResult());
+            }
+        }
     }
 
     /**
