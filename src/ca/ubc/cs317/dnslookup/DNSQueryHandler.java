@@ -190,7 +190,7 @@ public class DNSQueryHandler {
                     } catch (UnknownHostException E) {
                         // weird
                     }
-                break;
+                    break;
 
                 case CNAME:
                     DomainNameParser.parse(b, pos);
@@ -199,7 +199,25 @@ public class DNSQueryHandler {
                     ResourceRecord record = new ResourceRecord(hostName, type, ttl, alias);
                         cache.addResult(record);
                         verbosePrintResourceRecord(record, type.getCode());
-                break;
+                    break;
+
+                case MX:
+                    DomainNameParser.parse(b, pos+2);
+                    String domainName = DomainNameParser.getDomainName();
+
+                    record = new ResourceRecord(hostName, type, ttl, domainName);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
+                    break;
+
+                case SOA:
+                    DomainNameParser.parse(b, pos);
+                    String mname = DomainNameParser.getDomainName();
+
+                    record = new ResourceRecord(hostName, type, ttl, mname);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
+                        break;
 
                 default:
                 break;
@@ -225,7 +243,7 @@ public class DNSQueryHandler {
             
             ResourceRecord record = new ResourceRecord(hostName, type, ttl, result);
             cache.addResult(record);
-            nameServers.add(record);
+            if (type == RecordType.NS) nameServers.add(record);
             verbosePrintResourceRecord(record, type.getCode());
         }
 
@@ -257,14 +275,22 @@ public class DNSQueryHandler {
                     break;
                     
                 case CNAME:
-                case NS:
                 case SOA:
-                case MX:
+                case NS:
                     DomainNameParser.parse(b, pos);    
                     String domainName = DomainNameParser.getDomainName();
                     ResourceRecord record = new ResourceRecord(hostName, type, ttl, domainName);
                     cache.addResult(record);
                     verbosePrintResourceRecord(record, type.getCode());
+                    break;
+
+                case MX:
+                    DomainNameParser.parse(b, pos+2);
+                    domainName = DomainNameParser.getDomainName();
+
+                    record = new ResourceRecord(hostName, type, ttl, domainName);
+                        cache.addResult(record);
+                        verbosePrintResourceRecord(record, type.getCode());
                     break;
 
                 default:
